@@ -5,15 +5,46 @@ from string import Template
 
 from pandocfilters import Header, RawBlock, RawInline, toJSONFilters
 
+def unpack_metadata(meta):
+    ''' Unpack the metadata to get pandoc-minted settings.
 
-def unpack_code(value):
-    """Unpack the body and language of a pandoc code element."""
+    Args:
+        meta    document metadata
+    '''
+    settings = meta.get('pandoc-minted', {})
+    if settings.get('t', '') == 'MetaMap':
+        settings = settings['c']
+
+        # Get language.
+        language = settings.get('language', {})
+        if language.get('t', '') == 'MetaInlines':
+            language = language['c'][0]['c']
+        else:
+            language = None
+
+        return {'language': language}
+
+    else:
+        # Return default settings.
+        return {'language': 'text'}
+
+
+def unpack_code(value, language):
+    ''' Unpack the body and language of a pandoc code element.
+
+    Args:
+        value       contents of pandoc object
+        language    default language
+    '''
     [[_, classes, attributes], contents] = value
 
-    language = classes[0] if len(classes) > 0 else 'text'
+    if len(classes) > 0:
+        language = classes[0]
+
     attributes = ', '.join('='.join(x) for x in attributes)
 
-    return {'contents': contents, 'language': language, 'attributes': attributes}
+    return {'contents': contents, 'language': language,
+            'attributes': attributes}
 
 
 def fragile(key, value, format, meta):
@@ -34,15 +65,18 @@ def minted(key, value, format, meta):
         return
 
     if key == 'CodeBlock':
-        template = Template('\\begin{minted}[$attributes]{$language}\n$contents\n\end{minted}')
+        template = Template('\\begin{minted}[autogobble,breaklines,$attributes]{$language}\n$contents\n\end{minted}')
         Element = RawBlock
     elif key == 'Code':
-        template = Template('\\mintinline[$attributes]{$language}{$contents}')
+        template = Template('\\mintinline[autogobble,breaklines,$attributes]{$language}{$contents}')
         Element = RawInline
     else:
         return
 
-    text = template.substitute(unpack_code(value))
+    settings = unpack_metadata(meta)
+    code = unpack_code(value, settings['language'])
+
+    text = template.substitute(code)
     return Element('latex', text)
 
 
